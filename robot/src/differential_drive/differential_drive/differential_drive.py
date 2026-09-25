@@ -44,16 +44,30 @@ class DifferentialDriveNode(rclpy.Node):
 
     def pubVel(self) -> None:
         msg = Twist
-        if not self._joyVal or self.get_clock().now() - \
-            self._joyVal.header.stamp > Duration(seconds=0.1):  # type: ignore
+        if (
+            not self._joyVal
+            or self.get_clock().now() - self._joyVal.header.stamp  # type: ignore
+            > Duration(seconds=0.1)
+        ):
             msg.angular = 0
             msg.linear = 0
         else:
-            msg.angular = self._max_angular_vel_radps * self._joyVal.axes[0]
+            msg.angular = (
+                self._max_angular_vel_radps * self._joyVal.axes[self._angular_vel_axis]
+            )
+            msg.linear = (
+                self._max_linear_vel_mps * self._joyVal.axes[self._linear_vel_axis]
+            )
 
 
 def main():
-    print("Hi from differential_drive.")
+    rclpy.init()
+
+    node = DifferentialDriveNode()
+
+    rclpy.spin(node)
+
+    rclpy.shutdown()
 
 
 if __name__ == "__main__":
