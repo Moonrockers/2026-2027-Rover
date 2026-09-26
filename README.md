@@ -12,4 +12,5 @@ Code should target Ubuntu 24.04 and ROS2 [Jazzy Jalisco](https://docs.ros.org/en
 Development is recommended to be with WSL2 Ubuntu 24.04 on a Windows 11 machine
 See [this guide](https://www.linuxbuzz.com/how-to-install-ubuntu-on-wsl/) for setup help
 
-Pushes will not be allowed on the master branch. Make commits on another branch and pull request them to master.
+Pushes will not be allowed to the master or dev branches.
+On initial revisions, make pull requests to dev, and only pull request dev to master once code is verified (such as on hardware)
