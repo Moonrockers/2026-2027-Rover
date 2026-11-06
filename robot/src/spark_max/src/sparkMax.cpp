@@ -5,6 +5,7 @@
 #include <chrono>
 #include <iostream>
 #include <memory>
+#include <string>
 
 #include "rclcpp/rclcpp.hpp"
 #include "spark_max/sparkMaxDriver.hpp"
@@ -13,6 +14,10 @@
 class SparkMaxNode : public rclcpp::Node {
  public:
   SparkMaxNode() : Node("SparkMaxNode") {
+    declare_parameter("can_id", rclcpp::PARAMETER_INTEGER);
+    rclcpp::Parameter canIDParam{"can_id", 1};
+    get_parameter("can_id", canIDParam);
+    /*
     int fd = socket(PF_CAN, SOCK_RAW, CAN_RAW);
     if (fd < 0) {
       perror("socket");
@@ -32,30 +37,36 @@ class SparkMaxNode : public rclcpp::Node {
       perror("bind failed");
     }
 
-    rclcpp::Parameter canIDParam{"can_id", 1};
-    get_parameter("can_id", canIDParam);
     m_driver = std::make_unique<moonrockersrev::SparkMaxCanDriver>(
         fd, canIDParam.as_int());
+    */
 
     subscription_ = create_subscription<std_msgs::msg::Float64>(
-        "duty_cycle_setpoint", 10,
+        "duty_cycle_setpoint" + std::to_string(canIDParam.as_int()), 10,
         [this](std_msgs::msg::Float64::UniquePtr msg) -> void {
           dutyCycleSetpoint = msg->data;
         });
+    RCLCPP_INFO(get_logger(), "Constructed spark max w/ node id %ld",
+                canIDParam.as_int());
 
-    dutyCycleTimer_ =
-        create_wall_timer(std::chrono::milliseconds(5),
-                          std::bind(&SparkMaxNode::setDutyCycle, this));
-  };
+    RCLCPP_INFO(get_logger(), "%ld is starting the timer", canIDParam.as_int());
+    dutyCycleTimer_ = create_wall_timer(std::chrono::milliseconds(500), [&]() {
+      dutyCycleSetpoint = 1.0;
+      setDutyCycle();
+    });
+  }
 
  private:
   std::unique_ptr<moonrockersrev::SparkMaxCanDriver> m_driver;
   double dutyCycleSetpoint = 0.0;
 
   rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr subscription_;
+  rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr pub_;
   rclcpp::TimerBase::SharedPtr dutyCycleTimer_;
 
-  void setDutyCycle() { m_driver->SetPower(dutyCycleSetpoint); }
+  void setDutyCycle() {
+    // m_driver->SetPower(dutyCycleSetpoint);
+  }
 };
 
 int main(int argc, char* argv[]) {

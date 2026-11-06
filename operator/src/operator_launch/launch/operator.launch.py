@@ -18,6 +18,14 @@ from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description():
-    test_node = Node(package="spark_max", executable="spark_max", parameters=[{"can_id": 1}])
+    console_node = Node(
+        package="driver_console",
+        executable="driver_console",
+    )
+    autonomy_node = Node(
+        package="driver_console",
+        executable="autonomy_controller",
+        name="Autonomy_Controller",
+    )
 
-    return LaunchDescription([test_node])
+    return LaunchDescription([console_node, autonomy_node])
