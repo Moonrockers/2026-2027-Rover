@@ -42,7 +42,7 @@ class SparkMaxNode : public rclcpp::Node {
     */
 
     subscription_ = create_subscription<std_msgs::msg::Float64>(
-        "duty_cycle_setpoint" + std::to_string(canIDParam.as_int()), 10,
+        "velocity_setpoint" + std::to_string(canIDParam.as_int()), 10,
         [this](std_msgs::msg::Float64::UniquePtr msg) -> void {
           dutyCycleSetpoint = msg->data;
         });

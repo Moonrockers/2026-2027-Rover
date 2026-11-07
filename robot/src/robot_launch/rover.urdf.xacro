@@ -1,0 +1,135 @@
+<?xml version="1.0"?>
+<!-- 4-wheel skid-steer rover. Frames follow REP 103/105: x forward, y left, z up.
+     Values marked ASSUMED are placeholders: replace them from your CAD/scale. -->
+<robot name="rover" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:arg name="can_interface" default="can0"/>
+  <xacro:arg name="protocol" default="spark_max"/>   <!-- test_loopback for vcan bench tests -->
+
+  <!-- ===== Given dimensions (inches converted to metres) ===== -->
+  <xacro:property name="inch" value="0.0254"/>
+  <xacro:property name="wheel_radius" value="${4 * inch}"/>      <!-- 8 in diameter -->
+  <xacro:property name="wheelbase"    value="${20 * inch}"/>     <!-- front/back wheel centres -->
+  <xacro:property name="track"        value="${15 * inch}"/>     <!-- left/right wheel centres -->
+
+  <!-- ===== ASSUMED values ===== -->
+  <xacro:property name="wheel_width"      value="0.10"/>
+  <xacro:property name="wheel_mass"       value="1.0"/>
+  <xacro:property name="chassis_length"   value="0.55"/>
+  <xacro:property name="chassis_width"    value="0.26"/>   <!-- must fit between inner wheel faces -->
+  <xacro:property name="chassis_height"   value="0.15"/>
+  <xacro:property name="chassis_clearance" value="0.05"/>  <!-- ground to chassis bottom -->
+  <xacro:property name="chassis_mass"     value="20.0"/>
+  <xacro:property name="gear_ratio"       value="1.0"/>    <!-- motor revs per wheel rev -->
+  <xacro:property name="max_wheel_velocity" value="20.0"/> <!-- wheel rad/s at 100% duty: measure -->
+
+  <!-- ===== Inertia helpers ===== -->
+  <xacro:macro name="cylinder_inertia" params="m r h">
+    <inertia ixx="${m / 12 * (3 * r * r + h * h)}" iyy="${m / 12 * (3 * r * r + h * h)}"
+             izz="${m * r * r / 2}" ixy="0" ixz="0" iyz="0"/>
+  </xacro:macro>
+  <xacro:macro name="box_inertia" params="m x y z">
+    <inertia ixx="${m / 12 * (y * y + z * z)}" iyy="${m / 12 * (x * x + z * z)}"
+             izz="${m / 12 * (x * x + y * y)}" ixy="0" ixz="0" iyz="0"/>
+  </xacro:macro>
+
+  <!-- ===== Links ===== -->
+  <link name="base_footprint"/>
+
+  <!-- base_link sits at axle height, centred between the four wheels -->
+  <joint name="base_footprint_joint" type="fixed">
+    <parent link="base_footprint"/>
+    <child link="base_link"/>
+    <origin xyz="0 0 ${wheel_radius}" rpy="0 0 0"/>
+  </joint>
+
+  <link name="base_link">
+    <visual>
+      <origin xyz="0 0 ${chassis_clearance + chassis_height / 2 - wheel_radius}" rpy="0 0 0"/>
+      <geometry><box size="${chassis_length} ${chassis_width} ${chassis_height}"/></geometry>
+      <material name="chassis_grey"><color rgba="0.6 0.6 0.65 1"/></material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 ${chassis_clearance + chassis_height / 2 - wheel_radius}" rpy="0 0 0"/>
+      <geometry><box size="${chassis_length} ${chassis_width} ${chassis_height}"/></geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0 0 ${chassis_clearance + chassis_height / 2 - wheel_radius}" rpy="0 0 0"/>
+      <mass value="${chassis_mass}"/>
+      <xacro:box_inertia m="${chassis_mass}" x="${chassis_length}" y="${chassis_width}" z="${chassis_height}"/>
+    </inertial>
+  </link>
+
+  <!-- ===== Wheel macro: continuous joint about +y; positive rotation drives the rover forward ===== -->
+  <xacro:macro name="wheel" params="name x y">
+    <link name="${name}_wheel">
+      <visual>
+        <origin xyz="0 0 0" rpy="${pi / 2} 0 0"/>
+        <geometry><cylinder radius="${wheel_radius}" length="${wheel_width}"/></geometry>
+        <material name="wheel_black"><color rgba="0.1 0.1 0.1 1"/></material>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="${pi / 2} 0 0"/>
+        <geometry><cylinder radius="${wheel_radius}" length="${wheel_width}"/></geometry>
+      </collision>
+      <inertial>
+        <origin xyz="0 0 0" rpy="${pi / 2} 0 0"/>
+        <mass value="${wheel_mass}"/>
+        <xacro:cylinder_inertia m="${wheel_mass}" r="${wheel_radius}" h="${wheel_width}"/>
+      </inertial>
+    </link>
+    <joint name="${name}_wheel_joint" type="continuous">
+      <parent link="base_link"/>
+      <child link="${name}_wheel"/>
+      <origin xyz="${x} ${y} 0" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+    </joint>
+  </xacro:macro>
+
+  <xacro:wheel name="front_left"  x="${ wheelbase / 2}" y="${ track / 2}"/>
+  <xacro:wheel name="rear_left"   x="${-wheelbase / 2}" y="${ track / 2}"/>
+  <xacro:wheel name="front_right" x="${ wheelbase / 2}" y="${-track / 2}"/>
+  <xacro:wheel name="rear_right"  x="${-wheelbase / 2}" y="${-track / 2}"/>
+
+  <!-- ===== ros2_control (matches the spark_max_hardware package) =====
+       Right-side motors are mirrored, so they are inverted to keep positive = forward. -->
+  <ros2_control name="spark_max_system" type="system">
+    <hardware>
+      <plugin>spark_max_hardware/SparkMaxSystem</plugin>
+      <param name="can_interface">$(arg can_interface)</param>
+      <param name="protocol">$(arg protocol)</param>
+      <param name="feedback_timeout_ms">200</param>
+    </hardware>
+
+    <joint name="front_left_wheel_joint">
+      <command_interface name="velocity"/>
+      <state_interface name="position"/><state_interface name="velocity"/><state_interface name="current"/>
+      <param name="device_id">1</param>
+      <param name="max_velocity">${max_wheel_velocity}</param>
+      <param name="gear_ratio">${gear_ratio}</param>
+    </joint>
+    <joint name="rear_left_wheel_joint">
+      <command_interface name="velocity"/>
+      <state_interface name="position"/><state_interface name="velocity"/><state_interface name="current"/>
+      <param name="device_id">2</param>
+      <param name="max_velocity">${max_wheel_velocity}</param>
+      <param name="gear_ratio">${gear_ratio}</param>
+    </joint>
+    <joint name="front_right_wheel_joint">
+      <command_interface name="velocity"/>
+      <state_interface name="position"/><state_interface name="velocity"/><state_interface name="current"/>
+      <param name="device_id">3</param>
+      <param name="max_velocity">${max_wheel_velocity}</param>
+      <param name="gear_ratio">${gear_ratio}</param>
+      <param name="invert">true</param>
+    </joint>
+    <joint name="rear_right_wheel_joint">
+      <command_interface name="velocity"/>
+      <state_interface name="position"/><state_interface name="velocity"/><state_interface name="current"/>
+      <param name="device_id">4</param>
+      <param name="max_velocity">${max_wheel_velocity}</param>
+      <param name="gear_ratio">${gear_ratio}</param>
+      <param name="invert">true</param>
+    </joint>
+  </ros2_control>
+</robot>

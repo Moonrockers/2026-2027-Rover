@@ -1,0 +1,7 @@
+<library path="spark_max_hardware">
+  <class name="spark_max_hardware/SparkMaxSystem"
+         type="spark_max_hardware::SparkMaxSystem"
+         base_class_type="hardware_interface::SystemInterface">
+    <description>Drives REV SPARK MAX controllers over SocketCAN, with feedback.</description>
+  </class>
+</library>

@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>spark_max_hardware</name>
+  <version>0.1.0</version>
+  <description>ros2_control SystemInterface for REV SPARK MAX controllers over SocketCAN with a pluggable protocol layer</description>
+  <maintainer email="you@example.com">Your Team</maintainer>
+  <license>Apache-2.0</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>hardware_interface</depend>
+  <depend>pluginlib</depend>
+  <depend>rclcpp</depend>
+  <depend>rclcpp_lifecycle</depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>
