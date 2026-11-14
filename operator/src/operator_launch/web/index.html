@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rover Operator Console</title>
+  <script src="https://cdn.jsdelivr.net/npm/roslib@1.4.1/build/roslib.min.js"></script>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; }
+    body { max-width: 760px; margin: 0 auto; padding: 1rem; background: #17191d; }
+    h1 { margin-top: 0; }
+    section { margin: 1rem 0; padding: 1rem; border: 1px solid #3b414b; border-radius: 8px; }
+    .status { color: #ff6b6b; }
+    .connected { color: #6be58a; }
+    button { min-width: 5rem; min-height: 3rem; margin: .25rem; font-size: 1rem; }
+    .drive { display: grid; grid-template-columns: repeat(3, 1fr); max-width: 260px; margin: auto; }
+    .drive button:nth-child(1) { grid-column: 2; }
+    .drive button:nth-child(2) { grid-column: 1; grid-row: 2; }
+    .drive button:nth-child(3) { grid-column: 3; grid-row: 2; }
+    .drive button:nth-child(4) { grid-column: 2; grid-row: 3; }
+    .controls { display: flex; flex-wrap: wrap; justify-content: center; }
+    .help { color: #b7beca; }
+  </style>
+</head>
+<body>
+  <h1>Rover Operator Console</h1>
+  <p id="status" class="status">Connecting to ROS...</p>
+
+  <section>
+    <h2>Drive</h2>
+    <div class="drive">
+      <button data-drive="forward">Forward</button>
+      <button data-drive="left">Left</button>
+      <button data-drive="right">Right</button>
+      <button data-drive="reverse">Reverse</button>
+    </div>
+    <p class="help">Keyboard: W/S drive, A/D turn, E bucket, R/F actuators, C conveyor, Space stop.</p>
+  </section>
+
+  <section>
+    <h2>Excavation</h2>
+    <div class="controls">
+      <button data-excavation="bucketForward">Bucket forward</button>
+      <button data-excavation="actuatorUp">Actuators up</button>
+      <button data-excavation="actuatorDown">Actuators down</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Deposition</h2>
+    <div class="controls">
+      <button data-deposition="forward">Conveyor forward</button>
+    </div>
+  </section>
+
+  <script>
+    const status = document.getElementById("status");
+    const ros = new ROSLIB.Ros({ url: `ws://${location.hostname}:9090` });
+    const driveTopic = new ROSLIB.Topic({
+      ros, name: "/drive/cmd_vel", messageType: "geometry_msgs/TwistStamped"
+    });
+    const excavationTopic = new ROSLIB.Topic({
+      ros, name: "/excavation/commands", messageType: "std_msgs/Float64MultiArray"
+    });
+    const depositionTopic = new ROSLIB.Topic({
+      ros, name: "/deposition/commands", messageType: "std_msgs/Float64MultiArray"
+    });
+
+    let drive = { linear: 0, angular: 0 };
+    let excavation = [0, 0, 0];
+    let deposition = 0;
+    const speeds = { linear: 0.5, angular: 0.5 };
+
+    ros.on("connection", () => {
+      status.textContent = "Connected to ROS";
+      status.className = "connected";
+    });
+    ros.on("error", () => {
+      status.textContent = "ROS connection error";
+      status.className = "status";
+    });
+    ros.on("close", () => {
+      status.textContent = "ROS connection closed";
+      status.className = "status";
+    });
+
+    function publish() {
+      driveTopic.publish(new ROSLIB.Message({
+        header: { stamp: { sec: 0, nanosec: 0 }, frame_id: "" },
+        twist: { linear: { x: drive.linear, y: 0, z: 0 },
+                 angular: { x: 0, y: 0, z: drive.angular } }
+      }));
+      excavationTopic.publish(new ROSLIB.Message({ data: excavation }));
+      depositionTopic.publish(new ROSLIB.Message({ data: [deposition] }));
+    }
+
+    function stop() {
+      drive = { linear: 0, angular: 0 };
+      excavation = [0, 0, 0];
+      deposition = 0;
+      publish();
+    }
+
+    function hold(button, on, off = stop) {
+      button.addEventListener("pointerdown", (event) => {
+        event.preventDefault();
+        on();
+        button.setPointerCapture(event.pointerId);
+      });
+      ["pointerup", "pointercancel", "lostpointercapture"].forEach(type =>
+        button.addEventListener(type, off));
+    }
+
+    document.querySelectorAll("[data-drive]").forEach(button => {
+      const direction = button.dataset.drive;
+      hold(button, () => {
+        drive = direction === "forward" ? { linear: speeds.linear, angular: 0 } :
+                direction === "reverse" ? { linear: -speeds.linear, angular: 0 } :
+                direction === "left" ? { linear: 0, angular: speeds.angular } :
+                { linear: 0, angular: -speeds.angular };
+        publish();
+      });
+    });
+
+    document.querySelectorAll("[data-excavation]").forEach(button => {
+      const action = button.dataset.excavation;
+      hold(button, () => {
+        excavation = action === "bucketForward" ? [1, 0, 0] :
+                     action === "actuatorUp" ? [0, 1, 1] : [0, -1, -1];
+        publish();
+      });
+    });
+
+    document.querySelectorAll("[data-deposition]").forEach(button => {
+      hold(button, () => {
+        deposition = 1;
+        publish();
+      });
+    });
+
+    const keys = new Set();
+    function updateKeyboardCommands() {
+      drive = {
+        linear: keys.has("w") ? speeds.linear : keys.has("s") ? -speeds.linear : 0,
+        angular: keys.has("a") ? speeds.angular : keys.has("d") ? -speeds.angular : 0
+      };
+      excavation = [
+        keys.has("e") ? 1 : 0,
+        keys.has("r") ? 1 : keys.has("f") ? -1 : 0,
+        keys.has("r") ? 1 : keys.has("f") ? -1 : 0
+      ];
+      deposition = keys.has("c") ? 1 : 0;
+      publish();
+    }
+
+    document.addEventListener("keydown", event => {
+      if (event.repeat) return;
+      keys.add(event.key.toLowerCase());
+      if (event.key === " ") stop();
+      else updateKeyboardCommands();
+    });
+    document.addEventListener("keyup", event => {
+      keys.delete(event.key.toLowerCase());
+      updateKeyboardCommands();
+    });
+    window.addEventListener("blur", stop);
+    setInterval(publish, 100);
+    stop();
+  </script>
+</body>
+</html>

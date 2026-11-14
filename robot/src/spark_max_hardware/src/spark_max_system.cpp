@@ -101,6 +101,19 @@ SparkMaxSystem::CallbackReturn SparkMaxSystem::on_init(
           j.name.c_str());
       return CallbackReturn::ERROR;
     }
+    const auto min_position_it = j.parameters.find("min_position");
+    const auto max_position_it = j.parameters.find("max_position");
+    if ((min_position_it != j.parameters.end() &&
+         !to_double(min_position_it->second, m.min_position)) ||
+        (max_position_it != j.parameters.end() &&
+         !to_double(max_position_it->second, m.max_position)) ||
+        m.min_position > m.max_position) {
+      RCLCPP_ERROR(kLog,
+                   "Joint '%s': min_position and max_position must be "
+                   "numbers with min_position <= max_position",
+                   j.name.c_str());
+      return CallbackReturn::ERROR;
+    }
     m.sign = (get(j.parameters, "invert", "false") == "true") ? -1.0 : 1.0;
 
     for (const auto& ci : j.command_interfaces) {
@@ -256,6 +269,7 @@ hardware_interface::return_type SparkMaxSystem::read(const rclcpp::Time&,
       const double target_velocity = m.max_velocity * bounded_duty;
       m.vel = target_velocity;
       m.pos += m.vel * dt;
+      m.pos = std::clamp(m.pos, m.min_position, m.max_position);
       m.current = std::abs(bounded_duty) * 20.0;
       m.temperature = 25.0 + m.current * 0.25;
     }

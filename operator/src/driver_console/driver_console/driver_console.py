@@ -8,7 +8,7 @@ from std_msgs.msg import Float64MultiArray
 
 
 class DriverConsole(Node):
-    """Translate a DualShock-style joystick into rover commands."""
+    """Translate an Xbox-style joystick into rover commands."""
 
     COMMAND_PERIOD_SECONDS = 0.02
     JOY_TIMEOUT_SECONDS = 0.25
@@ -26,9 +26,9 @@ class DriverConsole(Node):
         self.declare_parameter("axis_linear", 1)
         self.declare_parameter("axis_angular", 3)
         self.declare_parameter("axis_dpad_vertical", 7)
-        self.declare_parameter("button_bucket_reverse", 4)  # L1
-        self.declare_parameter("button_bucket_forward", 6)  # L2
-        self.declare_parameter("button_deposition", 7)  # R2
+        self.declare_parameter("button_bucket_reverse", 4)  # LB
+        self.declare_parameter("axis_bucket_forward", 2)  # LT
+        self.declare_parameter("axis_deposition", 5)  # RT
         self.declare_parameter("invert_linear", True)
         self.declare_parameter("invert_angular", False)
 
@@ -57,10 +57,12 @@ class DriverConsole(Node):
         self.button_bucket_reverse = int(
             self.get_parameter("button_bucket_reverse").value
         )
-        self.button_bucket_forward = int(
-            self.get_parameter("button_bucket_forward").value
+        self.axis_bucket_forward = int(
+            self.get_parameter("axis_bucket_forward").value
         )
-        self.button_deposition = int(self.get_parameter("button_deposition").value)
+        self.axis_deposition = int(
+            self.get_parameter("axis_deposition").value
+        )
         self.invert_linear = bool(self.get_parameter("invert_linear").value)
         self.invert_angular = bool(self.get_parameter("invert_angular").value)
 
@@ -87,8 +89,8 @@ class DriverConsole(Node):
         self.get_logger().info("Driver console started")
         self.get_logger().info(
             "Drive: left stick vertical / right stick horizontal; "
-            "bucket: L1 reverse, L2 forward; actuators: D-pad up/down; "
-            "conveyor: hold R2"
+            "bucket: LB reverse, LT forward; actuators: D-pad up/down; "
+            "conveyor: hold RT"
         )
 
     def _joy_callback(self, msg: Joy) -> None:
@@ -125,14 +127,14 @@ class DriverConsole(Node):
 
     def _excavation_command(self) -> list[float]:
         bucket = float(
-            self._button(self.button_bucket_forward)
+            self._trigger(self.axis_bucket_forward)
             - self._button(self.button_bucket_reverse)
         )
         actuators = self._dpad_vertical()
         return [bucket, actuators, actuators]
 
     def _deposition_command(self) -> float:
-        return float(self._button(self.button_deposition))
+        return self._trigger(self.axis_deposition)
 
     def _axis(self, index: int, invert: bool = False) -> float:
         if self._joy_data is None or index < 0 or index >= len(self._joy_data.axes):
@@ -160,6 +162,18 @@ class DriverConsole(Node):
         if self._joy_data is None or index < 0 or index >= len(self._joy_data.buttons):
             return 0
         return 1 if self._joy_data.buttons[index] else 0
+
+    def _trigger(self, index: int) -> float:
+        if self._joy_data is None or index < 0 or index >= len(self._joy_data.axes):
+            return 0.0
+        value = float(self._joy_data.axes[index])
+        if not math.isfinite(value):
+            return 0.0
+        # joy_node commonly reports triggers in [-1, 1], while some drivers
+        # report [0, 1]. Normalize both forms to an unpressed-to-pressed range.
+        if value < 0.0:
+            value = (value + 1.0) / 2.0
+        return max(0.0, min(value, 1.0))
 
     def _publish_stop(self) -> None:
         stop = TwistStamped()

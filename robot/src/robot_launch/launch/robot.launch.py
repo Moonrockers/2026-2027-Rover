@@ -74,6 +74,12 @@ def generate_launch_description():
         output="both",
     )
 
+    bucket_chain_visualizer = Node(
+        package="robot_launch",
+        executable="bucket_chain_visualizer",
+        output="both",
+    )
+
     # Replaces the eight SparkMax nodes and the diffdrive_kinematics node.
     # Jazzy's controller manager reads the description from the /robot_description topic.
     ros2_control_node = Node(
@@ -124,6 +130,7 @@ def generate_launch_description():
         args
         + [
             robot_state_publisher,
+            bucket_chain_visualizer,
             ros2_control_node,
             joint_state_broadcaster,
             after_broadcaster,

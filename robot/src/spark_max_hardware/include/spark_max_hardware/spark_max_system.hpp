@@ -2,6 +2,7 @@
 #include <chrono>
 #include <cstdint>
 #include <memory>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -41,6 +42,8 @@ private:
     double max_velocity = 1.0;  // joint rad/s at 100% duty (open-loop scaling of velocity cmds)
     double gear_ratio = 1.0;    // motor revolutions per joint revolution
     double sign = 1.0;          // -1 if inverted
+    double min_position = -std::numeric_limits<double>::infinity();
+    double max_position = std::numeric_limits<double>::infinity();
 
     bool has_velocity_cmd = false;
     bool has_duty_cmd = false;

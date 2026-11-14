@@ -23,6 +23,27 @@
   <xacro:property name="gear_ratio"       value="1.0"/>    <!-- motor revs per wheel rev -->
   <xacro:property name="max_wheel_velocity" value="20.0"/> <!-- wheel rad/s at 100% duty: measure -->
 
+  <!-- ===== Excavation block model (CDR representation; replace with CAD values) ===== -->
+  <xacro:property name="excavation_length" value="${23 * inch}"/>
+  <xacro:property name="excavation_width" value="0.20"/>
+  <xacro:property name="excavation_rail_height" value="0.10"/>
+  <xacro:property name="excavation_pivot_x" value="${chassis_length / 2 - 0.02}"/>
+  <xacro:property name="excavation_pivot_z" value="0.45"/>
+  <!-- Retraction is the deep pose; extension rotates the ladder upward. -->
+  <xacro:property name="excavation_angle" value="1.0"/>
+  <xacro:property name="actuator_mount_x" value="0.15"/>
+  <xacro:property name="actuator_mount_z" value="0.25"/>
+  <xacro:property name="actuator_stroke" value="${4 * inch}"/>
+
+  <!-- ===== Static hopper ===== -->
+  <xacro:property name="hopper_length" value="0.46"/>
+  <xacro:property name="hopper_bottom_width" value="0.18"/>
+  <xacro:property name="hopper_top_width" value="0.42"/>
+  <xacro:property name="hopper_height" value="0.28"/>
+  <xacro:property name="hopper_wall_thickness" value="0.025"/>
+  <xacro:property name="hopper_bottom_z" value="0.16"/>
+  <xacro:property name="hopper_side_angle" value="${20 * pi / 180}"/>
+
   <!-- ===== Inertia helpers ===== -->
   <xacro:macro name="cylinder_inertia" params="m r h">
     <inertia ixx="${m / 12 * (3 * r * r + h * h)}" iyy="${m / 12 * (3 * r * r + h * h)}"
@@ -60,6 +81,72 @@
     </inertial>
   </link>
 
+  <!-- The hopper runs from the rear of the excavation area toward the rear
+       of the rover. Its open top is wider than its bottom. -->
+  <link name="hopper_link">
+    <visual>
+      <origin xyz="-0.05 0 ${hopper_bottom_z}"/>
+      <geometry>
+        <box size="${hopper_length} ${hopper_bottom_width} ${hopper_wall_thickness}"/>
+      </geometry>
+      <material name="hopper_material">
+        <color rgba="0.32 0.34 0.38 1"/>
+      </material>
+    </visual>
+    <visual>
+      <origin xyz="-0.05 ${-(hopper_bottom_width + hopper_top_width) / 4} ${hopper_bottom_z + hopper_height / 2}"
+              rpy="${hopper_side_angle} 0 0"/>
+      <geometry>
+        <box size="${hopper_length} ${hopper_wall_thickness} ${hopper_height}"/>
+      </geometry>
+      <material name="hopper_material_left">
+        <color rgba="0.32 0.34 0.38 1"/>
+      </material>
+    </visual>
+    <visual>
+      <origin xyz="-0.05 ${(hopper_bottom_width + hopper_top_width) / 4} ${hopper_bottom_z + hopper_height / 2}"
+              rpy="${-hopper_side_angle} 0 0"/>
+      <geometry>
+        <box size="${hopper_length} ${hopper_wall_thickness} ${hopper_height}"/>
+      </geometry>
+      <material name="hopper_material_right">
+        <color rgba="0.32 0.34 0.38 1"/>
+      </material>
+    </visual>
+    <visual>
+      <origin xyz="${-0.05 - hopper_length / 2} 0 ${hopper_bottom_z + 4 * hopper_height / 9}"/>
+      <geometry>
+        <box size="${hopper_wall_thickness} ${hopper_bottom_width + 4 * (hopper_top_width - hopper_bottom_width) / 9} ${2 * hopper_height / 9}"/>
+      </geometry>
+      <material name="hopper_rear_wall_material">
+        <color rgba="0.32 0.34 0.38 1"/>
+      </material>
+    </visual>
+    <visual>
+      <origin xyz="${-0.05 - hopper_length / 2} 0 ${hopper_bottom_z + 6 * hopper_height / 9}"/>
+      <geometry>
+        <box size="${hopper_wall_thickness} ${hopper_bottom_width + 6 * (hopper_top_width - hopper_bottom_width) / 9} ${2 * hopper_height / 9}"/>
+      </geometry>
+      <material name="hopper_rear_wall_material_2">
+        <color rgba="0.32 0.34 0.38 1"/>
+      </material>
+    </visual>
+    <visual>
+      <origin xyz="${-0.05 - hopper_length / 2} 0 ${hopper_bottom_z + 8 * hopper_height / 9}"/>
+      <geometry>
+        <box size="${hopper_wall_thickness} ${hopper_bottom_width + 8 * (hopper_top_width - hopper_bottom_width) / 9} ${2 * hopper_height / 9}"/>
+      </geometry>
+      <material name="hopper_rear_wall_material_3">
+        <color rgba="0.32 0.34 0.38 1"/>
+      </material>
+    </visual>
+  </link>
+  <joint name="hopper_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="hopper_link"/>
+    <origin xyz="0 0 0"/>
+  </joint>
+
   <!-- ===== Wheel macro: continuous joint about +y; positive rotation drives the rover forward ===== -->
   <xacro:macro name="wheel" params="name x y">
     <link name="${name}_wheel">
@@ -91,22 +178,200 @@
   <xacro:wheel name="front_right" x="${ wheelbase / 2}" y="${-track / 2}"/>
   <xacro:wheel name="rear_right"  x="${-wheelbase / 2}" y="${-track / 2}"/>
 
-  <!-- ===== Placeholder mechanism joints (NO geometry yet) =====
-       Exist so ros2_control joints have URDF counterparts. Replace the type, axis, limits and
-       child links when the excavation/deposition mechanisms are modelled. -->
-  <xacro:macro name="placeholder_joint" params="name">
-    <link name="${name}_link"/>
-    <joint name="${name}_joint" type="continuous">
-      <parent link="base_link"/>
-      <child link="${name}_link"/>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <axis xyz="0 1 0"/>
+  <!-- ===== Excavation block model =====
+       The ladder is 20 in long and pivots about a point near its top. The
+       pivot visually follows the left actuator; both horizontal actuator joints are
+       commanded together by the excavation controller. Dimensions and colors
+       are representative until the mechanism CAD is available. -->
+  <link name="excavation_mount">
+    <visual>
+      <origin xyz="${excavation_pivot_x} 0 ${excavation_pivot_z - 0.08}"/>
+      <geometry><box size="0.12 0.28 0.16"/></geometry>
+      <material name="excavation_mount_material">
+        <color rgba="0.35 0.35 0.38 1"/>
+      </material>
+    </visual>
+  </link>
+  <joint name="excavation_mount_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="excavation_mount"/>
+    <origin xyz="0 0 0"/>
+  </joint>
+
+  <link name="excavation_ladder">
+    <visual>
+      <origin xyz="${excavation_length / 2} 0 0"/>
+      <geometry>
+        <box size="${excavation_length} ${excavation_width} ${excavation_rail_height}"/>
+      </geometry>
+      <material name="excavation_ladder_material">
+        <color rgba="0.75 0.48 0.12 1"/>
+      </material>
+    </visual>
+  </link>
+  <joint name="excavation_pivot_joint" type="revolute">
+    <parent link="base_link"/>
+    <child link="excavation_ladder"/>
+    <origin xyz="${excavation_pivot_x} 0 ${excavation_pivot_z}"
+            rpy="0 ${excavation_angle} 3.14"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="0.8" upper="1.95" effort="1.0" velocity="1.0"/>
+    <!-- The 180-degree yaw reverses the effective pivot direction. -->
+    <mimic joint="linear_actuator_left_joint" multiplier="4.9"
+            offset="${excavation_angle}"/>
+  </joint>
+
+  <link name="bucket_drive_link"/>
+  <joint name="bucket_joint" type="continuous">
+    <parent link="excavation_ladder"/>
+    <child link="bucket_drive_link"/>
+    <origin xyz="0.08 0 0.10"/>
+    <axis xyz="0 1 0"/>
+  </joint>
+
+  <!-- Visual-only bucket carriers. Their positions are updated around this
+       rectangular path by bucket_chain_visualizer from bucket_joint state. -->
+  <xacro:macro name="chain_bucket" params="index">
+    <link name="bucket_chain_${index}_link">
+      <visual>
+        <origin xyz="0 0 0"/>
+        <geometry><box size="0.08 0.24 0.12"/></geometry>
+        <material name="moving_bucket_material_${index}">
+          <color rgba="0.92 0.70 0.16 1"/>
+        </material>
+      </visual>
+    </link>
+    <link name="bucket_chain_${index}_x_link"/>
+    <joint name="bucket_chain_${index}_x_joint" type="prismatic">
+      <parent link="excavation_ladder"/>
+      <child link="bucket_chain_${index}_x_link"/>
+      <origin xyz="0 0 0"/>
+      <axis xyz="1 0 0"/>
+      <limit lower="0" upper="${excavation_length}" effort="1.0" velocity="1.0"/>
+    </joint>
+    <joint name="bucket_chain_${index}_z_joint" type="prismatic">
+      <parent link="bucket_chain_${index}_x_link"/>
+      <child link="bucket_chain_${index}_link"/>
+      <origin xyz="0 0 0"/>
+      <axis xyz="0 0 1"/>
+      <limit lower="-0.16" upper="0.16" effort="1.0" velocity="1.0"/>
     </joint>
   </xacro:macro>
-  <xacro:placeholder_joint name="bucket"/>
-  <xacro:placeholder_joint name="linear_actuator_left"/>
-  <xacro:placeholder_joint name="linear_actuator_right"/>
-  <xacro:placeholder_joint name="deposition"/>
+  <xacro:chain_bucket index="0"/>
+  <xacro:chain_bucket index="1"/>
+  <xacro:chain_bucket index="2"/>
+  <xacro:chain_bucket index="3"/>
+
+  <link name="linear_actuator_left_body">
+    <visual>
+      <origin xyz="0 0 0"/>
+      <geometry><box size="0.12 0.07 0.07"/></geometry>
+      <material name="actuator_body_material">
+        <color rgba="0.25 0.25 0.28 1"/>
+      </material>
+    </visual>
+  </link>
+  <joint name="linear_actuator_left_body_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="linear_actuator_left_body"/>
+    <origin xyz="${actuator_mount_x + 0.06} ${track / 2 - 0.04} ${actuator_mount_z}"/>
+  </joint>
+
+  <link name="linear_actuator_left_link">
+    <visual>
+      <origin xyz="0.09 0 0"/>
+      <geometry><box size="0.18 0.04 0.04"/></geometry>
+      <material name="actuator_rod_material">
+        <color rgba="0.70 0.70 0.72 1"/>
+      </material>
+    </visual>
+  </link>
+  <joint name="linear_actuator_left_joint" type="prismatic">
+    <parent link="base_link"/>
+    <child link="linear_actuator_left_link"/>
+    <origin xyz="${actuator_mount_x} ${track / 2 - 0.04} ${actuator_mount_z}"/>
+    <axis xyz="1 0 0"/>
+    <limit lower="0" upper="${actuator_stroke}" effort="1.0" velocity="0.08"/>
+  </joint>
+
+  <link name="linear_actuator_right_body">
+    <visual>
+      <origin xyz="0 0 0"/>
+      <geometry><box size="0.12 0.07 0.07"/></geometry>
+      <material name="actuator_body_material_2">
+        <color rgba="0.25 0.25 0.28 1"/>
+      </material>
+    </visual>
+  </link>
+  <joint name="linear_actuator_right_body_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="linear_actuator_right_body"/>
+    <origin xyz="${actuator_mount_x + 0.06} ${-track / 2 + 0.04} ${actuator_mount_z}"/>
+  </joint>
+
+  <link name="linear_actuator_right_link">
+    <visual>
+      <origin xyz="0.09 0 0"/>
+      <geometry><box size="0.18 0.04 0.04"/></geometry>
+      <material name="actuator_rod_material_2">
+        <color rgba="0.70 0.70 0.72 1"/>
+      </material>
+    </visual>
+  </link>
+  <joint name="linear_actuator_right_joint" type="prismatic">
+    <parent link="base_link"/>
+    <child link="linear_actuator_right_link"/>
+    <origin xyz="${actuator_mount_x} ${-track / 2 + 0.04} ${actuator_mount_z}"/>
+    <axis xyz="1 0 0"/>
+    <limit lower="0" upper="${actuator_stroke}" effort="1.0" velocity="0.08"/>
+  </joint>
+
+  <!-- Static conveyor bed along the bottom of the hopper. -->
+  <link name="deposition_conveyor_bed">
+    <visual>
+      <origin xyz="-0.05 0 0.19"/>
+      <geometry><box size="0.46 0.14 0.04"/></geometry>
+      <material name="conveyor_bed_material">
+        <color rgba="0.16 0.17 0.19 1"/>
+      </material>
+    </visual>
+  </link>
+  <joint name="deposition_conveyor_bed_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="deposition_conveyor_bed"/>
+    <origin xyz="0 0 0"/>
+  </joint>
+
+  <!-- The deposition motor drives the rear conveyor roller and cleats. -->
+  <link name="deposition_link">
+    <visual>
+      <geometry><cylinder radius="0.0275" length="0.16"/></geometry>
+      <origin xyz="0 0 0" rpy="${pi / 2} 0 0"/>
+      <material name="conveyor_roller_material">
+        <color rgba="0.25 0.26 0.29 1"/>
+      </material>
+    </visual>
+    <visual>
+      <origin xyz="0.055 0 0.045"/>
+      <geometry><box size="0.025 0.15 0.025"/></geometry>
+      <material name="conveyor_cleat_material">
+        <color rgba="0.92 0.70 0.16 1"/>
+      </material>
+    </visual>
+    <visual>
+      <origin xyz="-0.055 0 -0.045"/>
+      <geometry><box size="0.025 0.15 0.025"/></geometry>
+      <material name="conveyor_cleat_material_2">
+        <color rgba="0.92 0.70 0.16 1"/>
+      </material>
+    </visual>
+  </link>
+  <joint name="deposition_joint" type="continuous">
+    <parent link="base_link"/>
+    <child link="deposition_link"/>
+    <origin xyz="-0.25 0 ${hopper_bottom_z}"/>
+    <axis xyz="0 -1 0"/>
+  </joint>
 
   <!-- ===== ros2_control (matches the spark_max_hardware package) =====
        Right-side motors are mirrored, so they are inverted to keep positive = forward.
@@ -160,11 +425,17 @@
       <command_interface name="duty_cycle"/>
       <state_interface name="position"/><state_interface name="velocity"/><state_interface name="current"/>
       <param name="device_id">6</param>
+      <param name="max_velocity">0.08</param>
+      <param name="min_position">0.0</param>
+      <param name="max_position">${actuator_stroke}</param>
     </joint>
     <joint name="linear_actuator_right_joint">
       <command_interface name="duty_cycle"/>
       <state_interface name="position"/><state_interface name="velocity"/><state_interface name="current"/>
       <param name="device_id">7</param>
+      <param name="max_velocity">0.08</param>
+      <param name="min_position">0.0</param>
+      <param name="max_position">${actuator_stroke}</param>
     </joint>
     <joint name="deposition_joint">
       <command_interface name="duty_cycle"/>
