@@ -11,6 +11,7 @@ Targeted at ROS 2 Jazzy (the `on_init` signature differs on newer distros).
 | ros2_control plumbing (lifecycle, interfaces, gear ratio, inversion, NaN handling) | Implemented |
 | Feedback staleness check, neutral-on-deactivate, TX failure limit | Implemented |
 | **SPARK MAX frame encode/decode** (`spark_max_can_protocol.cpp`) | **Not implemented, on purpose** |
+| Simulation backend (`protocol=simulation`) | Implemented; integrates all commands into feedback state without CAN |
 | `test_loopback` protocol + `test/fake_motor.py` | Invented frames for bench-testing the framework only |
 
 With `protocol=spark_max`, `on_activate` refuses to start until `implemented()` returns true.
@@ -24,7 +25,7 @@ Protocol code returns SI units at the motor shaft; `SparkMaxSystem` applies `gea
 
 ## Parameters
 
-Hardware: `can_interface` (default `can0`), `protocol` (`spark_max` | `test_loopback`),
+Hardware: `can_interface` (default `can0`), `protocol` (`simulation` | `spark_max` | `test_loopback`),
 `feedback_timeout_ms` (default 200, 0 disables).
 Joint: `device_id` (required), `max_velocity`, `gear_ratio`, `invert`.
 Command interfaces (exactly one per joint): `velocity` (converted to duty as cmd / max_velocity, open loop) or `duty_cycle`.
@@ -37,6 +38,20 @@ State interfaces: `position`, `velocity`, `current`, `temperature` (export what 
 - NaN/inf commands are treated as 0. On deactivate, a neutral (zero duty) command is sent.
 - ROS-side zeroing cannot help if the bus itself is gone. What the controller does when commands stop
   is a property of the controller; establish it from documentation and test it before relying on it.
+
+## CDR simulation
+
+From the robot workspace, launch the complete ros2_control stack without CAN hardware:
+
+    source /opt/ros/jazzy/setup.bash
+    colcon build
+    source install/setup.bash
+    ros2 launch robot_launch robot.launch.py
+
+The launch defaults to `protocol=simulation` and leaves Azure Kinect nodes disabled. Drive commands
+use `/drive/cmd_vel` (`geometry_msgs/TwistStamped`); mechanism commands use
+`/excavation/commands` with `[bucket, actuator_left, actuator_right]` and `/deposition/commands`
+with `[conveyor]`. Select `protocol:=spark_max` only after the real CAN frames have been verified.
 
 ## Bench test without hardware (framework only)
 

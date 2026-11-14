@@ -241,16 +241,22 @@ SparkMaxSystem::CallbackReturn SparkMaxSystem::on_deactivate(
 hardware_interface::return_type SparkMaxSystem::read(const rclcpp::Time&,
                                                      const rclcpp::Duration& period) {
   if (simulation_) {
-    const double dt = std::clamp(period.seconds(), 0.0, 0.1);
+    const double period_seconds = period.seconds();
+    const double dt =
+        std::isfinite(period_seconds) ? std::clamp(period_seconds, 0.0, 0.1)
+                                      : 0.0;
     for (auto& m : motors_) {
       const double duty = m.has_velocity_cmd
                               ? m.cmd_velocity / m.max_velocity
                               : m.cmd_duty;
-      const double target_velocity =
-          m.sign * m.max_velocity * std::clamp(duty, -1.0, 1.0);
+      const double bounded_duty =
+          std::isfinite(duty) ? std::clamp(duty, -1.0, 1.0) : 0.0;
+      // Simulation commands are already expressed in joint space. The sign
+      // correction is only needed when translating to a physical motor.
+      const double target_velocity = m.max_velocity * bounded_duty;
       m.vel = target_velocity;
       m.pos += m.vel * dt;
-      m.current = std::abs(duty) * 20.0;
+      m.current = std::abs(bounded_duty) * 20.0;
       m.temperature = 25.0 + m.current * 0.25;
     }
     return hardware_interface::return_type::OK;

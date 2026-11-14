@@ -18,7 +18,7 @@ diff_drive_controller:
         wheel_radius: 0.1016 # 4 in
         wheel_separation_multiplier: 1.0 # skid steer: tune from a spin-in-place test
         cmd_vel_timeout: 0.5 # zero output if cmd_vel stops
-        use_stamped_vel: false # plain geometry_msgs/Twist (Jazzy default is stamped)
+        use_stamped_vel: true # geometry_msgs/TwistStamped from the operator console
         open_loop: false # odometry from measured wheel feedback
         base_frame_id: base_link
         odom_frame_id: odom
