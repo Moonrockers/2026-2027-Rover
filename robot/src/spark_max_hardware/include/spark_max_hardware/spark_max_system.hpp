@@ -62,6 +62,7 @@ private:
   std::unique_ptr<SparkMaxProtocol> protocol_;
   CanSocket can_;
   std::string can_interface_;
+  bool simulation_ = false;
   Clock::duration feedback_timeout_{};
   int tx_failures_ = 0;
   std::vector<can_frame> rx_, tx_;

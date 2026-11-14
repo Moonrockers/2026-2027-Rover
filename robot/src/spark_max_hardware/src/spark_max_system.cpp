@@ -51,8 +51,11 @@ SparkMaxSystem::CallbackReturn SparkMaxSystem::on_init(
 
   const std::string protocol_name =
       get(info.hardware_parameters, "protocol", "spark_max");
-  protocol_ = make_protocol(protocol_name);
-  if (!protocol_) {
+  simulation_ = protocol_name == "simulation";
+  if (!simulation_) {
+    protocol_ = make_protocol(protocol_name);
+  }
+  if (!simulation_ && !protocol_) {
     RCLCPP_ERROR(kLog, "Unknown protocol '%s'", protocol_name.c_str());
     return CallbackReturn::ERROR;
   }
@@ -175,6 +178,17 @@ SparkMaxSystem::export_command_interfaces() {
 
 SparkMaxSystem::CallbackReturn SparkMaxSystem::on_activate(
     const rclcpp_lifecycle::State&) {
+  if (simulation_) {
+    const auto now = Clock::now();
+    for (auto& m : motors_) {
+      m.cmd_velocity = m.cmd_duty = 0.0;
+      m.last_feedback = now;
+      m.pos = m.vel = m.current = m.temperature = 0.0;
+    }
+    tx_failures_ = 0;
+    RCLCPP_INFO(kLog, "Active in simulation mode, %zu motor(s)", motors_.size());
+    return CallbackReturn::SUCCESS;
+  }
   if (!protocol_->implemented()) {
     RCLCPP_ERROR(kLog,
                  "Protocol '%s' is not implemented yet (see "
@@ -225,7 +239,22 @@ SparkMaxSystem::CallbackReturn SparkMaxSystem::on_deactivate(
 }
 
 hardware_interface::return_type SparkMaxSystem::read(const rclcpp::Time&,
-                                                     const rclcpp::Duration&) {
+                                                     const rclcpp::Duration& period) {
+  if (simulation_) {
+    const double dt = std::clamp(period.seconds(), 0.0, 0.1);
+    for (auto& m : motors_) {
+      const double duty = m.has_velocity_cmd
+                              ? m.cmd_velocity / m.max_velocity
+                              : m.cmd_duty;
+      const double target_velocity =
+          m.sign * m.max_velocity * std::clamp(duty, -1.0, 1.0);
+      m.vel = target_velocity;
+      m.pos += m.vel * dt;
+      m.current = std::abs(duty) * 20.0;
+      m.temperature = 25.0 + m.current * 0.25;
+    }
+    return hardware_interface::return_type::OK;
+  }
   rx_.clear();
   if (can_.receive(rx_, kMaxFramesPerCycle) < 0) {
     RCLCPP_ERROR(kLog, "CAN receive failed: %s", can_.last_error().c_str());
@@ -277,6 +306,9 @@ hardware_interface::return_type SparkMaxSystem::read(const rclcpp::Time&,
 
 hardware_interface::return_type SparkMaxSystem::write(const rclcpp::Time&,
                                                       const rclcpp::Duration&) {
+  if (simulation_) {
+    return hardware_interface::return_type::OK;
+  }
   tx_.clear();
   protocol_->periodic_frames(tx_);
 

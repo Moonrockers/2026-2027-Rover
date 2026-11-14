@@ -4,9 +4,7 @@ import time
 
 import rclpy
 from rclpy.node import Node
-from rcl_interfaces.msg import Parameter
-
-from std_msgs.msg import Float64, Bool
+from std_msgs.msg import Float64MultiArray
 from geometry_msgs.msg import TwistStamped
 from sensor_msgs.msg import Joy, Image
 
@@ -23,6 +21,10 @@ class DriverConsole(Node):
         self.declare_parameter("deadband", 0.05)
         self.declare_parameter("axis_linear", 1)
         self.declare_parameter("axis_angular", 0)
+        self.declare_parameter("axis_bucket", 2)
+        self.declare_parameter("axis_actuator_left", 3)
+        self.declare_parameter("axis_actuator_right", 4)
+        self.declare_parameter("axis_deposition", 5)
         self.declare_parameter("invert_linear", False)
         self.declare_parameter("invert_angular", False)
 
@@ -32,26 +34,19 @@ class DriverConsole(Node):
             10,
         )
 
-        # these would do some form of output but are not for diagrams
         self._image_sub1 = self.create_subscription(
             Image, "/camera1/Image", lambda msg: None, 10
         )
-        self._image_sub1 = self.create_subscription(
+        self._image_sub2 = self.create_subscription(
             Image, "/camera2/Image", lambda msg: None, 10
         )
+        self._joy_sub = self.create_subscription(Joy, "joy", self.joyCallback, 10)
 
-        self._excavation_buckets_pub = self.create_publisher(
-            Float64, "/excavation/duty_cycle_setpoint5", 10
+        self._excavation_pub = self.create_publisher(
+            Float64MultiArray, "/excavation/commands", 10
         )
-        self._excavation_actuator_pub = self.create_publisher(
-            Float64, "/excavation/duty_cycle_setpoint6", 10
-        )
-        self._excavation_actuator2_pub = self.create_publisher(
-            Float64, "/excavation/duty_cycle_setpoint7", 10
-        )
-
-        self._excavation_actuator2_pub = self.create_publisher(
-            Float64, "/deposition/duty_cycle_setpoint8", 10
+        self._deposition_pub = self.create_publisher(
+            Float64MultiArray, "/deposition/commands", 10
         )
 
         self._timer = self.create_timer(self.DT, self.writeVelocity)
@@ -76,6 +71,18 @@ class DriverConsole(Node):
         )
         self.axisAngular = (
             self.get_parameter("axis_angular").get_parameter_value().integer_value
+        )
+        self.axisBucket = (
+            self.get_parameter("axis_bucket").get_parameter_value().integer_value
+        )
+        self.axisActuatorLeft = (
+            self.get_parameter("axis_actuator_left").get_parameter_value().integer_value
+        )
+        self.axisActuatorRight = (
+            self.get_parameter("axis_actuator_right").get_parameter_value().integer_value
+        )
+        self.axisDeposition = (
+            self.get_parameter("axis_deposition").get_parameter_value().integer_value
         )
         self.invertLinear = (
             self.get_parameter("invert_linear").get_parameter_value().bool_value
@@ -110,6 +117,8 @@ class DriverConsole(Node):
                 twist.twist.linear.x = 0.0
                 twist.twist.angular.z = 0.0
                 self._drive_pub.publish(twist)
+                self._excavation_pub.publish(Float64MultiArray(data=[0.0, 0.0, 0.0]))
+                self._deposition_pub.publish(Float64MultiArray(data=[0.0]))
                 return
             twist.twist.linear.x = self._applyDeadband(
                 self._joyData.axes[self.axisLinear]
@@ -122,10 +131,24 @@ class DriverConsole(Node):
                 * self.maxAngularSpeed
                 * (-1 if self.invertAngular else 1)
             )
+            self._excavation_pub.publish(
+                Float64MultiArray(
+                    data=[
+                        self._axis_value(self.axisBucket),
+                        self._axis_value(self.axisActuatorLeft),
+                        self._axis_value(self.axisActuatorRight),
+                    ]
+                )
+            )
+            self._deposition_pub.publish(
+                Float64MultiArray(data=[self._axis_value(self.axisDeposition)])
+            )
         except Exception as e:
             self.get_logger().error(f"Sending 0 velocity because got error: {e}")
             twist.twist.linear.x = 0.0
             twist.twist.angular.z = 0.0
+            self._excavation_pub.publish(Float64MultiArray(data=[0.0, 0.0, 0.0]))
+            self._deposition_pub.publish(Float64MultiArray(data=[0.0]))
 
         self._drive_pub.publish(twist)
 
@@ -134,12 +157,19 @@ class DriverConsole(Node):
             return 0.0
         return value
 
+    def _axis_value(self, axis: int) -> float:
+        if self._joyData is None or axis < 0 or axis >= len(self._joyData.axes):
+            return 0.0
+        return self._applyDeadband(self._joyData.axes[axis])
+
     def destroy_node(self):
         twist = TwistStamped()
         twist.header.stamp = self.get_clock().now().to_msg()
         twist.twist.linear.x = 0
         twist.twist.angular.z = 0
         self._drive_pub.publish(twist)
+        self._excavation_pub.publish(Float64MultiArray(data=[0.0, 0.0, 0.0]))
+        self._deposition_pub.publish(Float64MultiArray(data=[0.0]))
         return super().destroy_node()
 
 
